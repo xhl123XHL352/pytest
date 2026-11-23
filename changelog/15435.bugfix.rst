@@ -1,0 +1,2 @@
+Avoid creating a new cleanup lock in an already discarded temporary directory,
+which could cause a warning when concurrent pytest sessions remove it.

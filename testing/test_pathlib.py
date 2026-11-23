@@ -21,9 +21,11 @@ from _pytest.config import ExitCode
 from _pytest.monkeypatch import MonkeyPatch
 from _pytest.pathlib import _import_module_using_spec
 from _pytest.pathlib import bestrelpath
+from _pytest.pathlib import cleanup_numbered_dir
 from _pytest.pathlib import commonpath
 from _pytest.pathlib import compute_module_name
 from _pytest.pathlib import CouldNotResolvePathError
+from _pytest.pathlib import create_cleanup_lock
 from _pytest.pathlib import ensure_deletable
 from _pytest.pathlib import fnmatch_ex
 from _pytest.pathlib import get_extended_length_path_str
@@ -456,6 +458,35 @@ def test_package_unimportable(tmp_path: Path) -> None:
     xyz.touch()
     assert resolve_package_path(xyz) == subdir
     assert not resolve_package_path(pkg)
+
+
+def test_cleanup_garbage_without_relocking(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    garbage = tmp_path / "garbage-stale"
+    garbage.mkdir()
+    active_garbage = tmp_path / "garbage-active"
+    active_garbage.mkdir()
+    get_lock_path(active_garbage).touch()
+    unrelated_file = tmp_path / "garbage-file"
+    unrelated_file.touch()
+
+    lock_creations = []
+
+    def record_cleanup_lock(path: Path) -> Path:
+        lock = create_cleanup_lock(path)
+        lock_creations.append(lock)
+        return lock
+
+    monkeypatch.setattr("_pytest.pathlib.create_cleanup_lock", record_cleanup_lock)
+    cleanup_numbered_dir(
+        tmp_path, "pytest-", keep=3, consider_lock_dead_if_created_before=0
+    )
+
+    assert lock_creations == []
+    assert not garbage.exists()
+    assert active_garbage.is_dir()
+    assert unrelated_file.is_file()
 
 
 def test_access_denied_during_cleanup(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:

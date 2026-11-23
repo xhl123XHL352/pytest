@@ -410,7 +410,13 @@ def cleanup_numbered_dir(
     for path in cleanup_candidates(root, prefix, keep):
         try_cleanup(path, consider_lock_dead_if_created_before)
     for path in root.glob("garbage-*"):
-        try_cleanup(path, consider_lock_dead_if_created_before)
+        # A concurrent rmtree may have just removed the lock. Creating another
+        # lock here can leave a file behind while that rmtree removes the directory.
+        with contextlib.suppress(OSError):
+            if path.is_dir() and ensure_deletable(
+                path, consider_lock_dead_if_created_before
+            ):
+                rm_rf(path)
 
     cleanup_dead_symlinks(root)
 
